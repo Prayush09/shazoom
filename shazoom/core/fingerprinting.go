@@ -69,7 +69,7 @@ func GenerateFingerprintsFromSamples(samples []float64, sampleRate int, songID u
 }
 
 func GenerateFingerprints(songFilePath string, songID uint32) (map[int64]models.Couple, error) {
-    wavFilePath, err := wav.ConvertToWAV(songFilePath, 2) 
+    wavFilePath, err := wav.ConvertToWAV(songFilePath) 
     if err != nil {
         return nil, fmt.Errorf("error converting input file to WAV: %w", err)
     }

@@ -86,7 +86,7 @@ func LoadRealAudio(t *testing.T) ([]float64, int, float64) {
 		t.Fatalf("Test file does not exist: %s", path)
 	}
 
-	wavPath, err := fileformat.ConvertToWAV(path, 1)
+	wavPath, err := fileformat.ConvertToWAV(path)
 	if err != nil {
 		t.Fatalf("Failed to convert to WAV: %v", err)
 	}

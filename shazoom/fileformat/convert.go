@@ -5,19 +5,31 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	//"shazoom/utils"
+	"shazoom/utils"
 	"strings"
+	"strconv"
 )
 
 // channels => Mono(1) or Stereo(2)
 // function takes in a input audio file and returns loc of converted wav file.
-func ConvertToWAV(inputFilePath string, channels int) (wavFilePath string, err error) {
+func ConvertToWAV(inputFilePath string) (wavFilePath string, err error) {
 
 	//verifying file path
 	_, err = os.Stat(inputFilePath)
 	if err != nil {
 		return "", fmt.Errorf("input file does not exists!: %w", err)
 	}	
+
+	to_stereoStr := utils.GetEnv("FINGERPRINT_STEREO", "false")
+	to_stereo, err := strconv.ParseBool(to_stereoStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to convert env variable (%s) to bool: %v", "FINGERPRINT_STEREO", err)
+	}
+
+	channels := 1
+	if to_stereo {
+		channels = 2
+	}
 
 	opts := ConversionOptions{
 		Channels: channels,

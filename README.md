@@ -315,4 +315,9 @@ ok      shazoom/test    11.876s
 
 ## 15th Dec 2025
 
-- Going to choose a framework for frontend
+- built a frontend in react [basic]
+- marshalling and unmarshalling data for backend processing
+- Backend structure will be implement using seperation of concerns.
+- Socket function will be in websockets
+- Server function include ensuring calls to the core algo, DB and back and relaying data with socket functions.
+- Main function will ensure that the application data is stored appropriately on the running VM, and invoking the server.

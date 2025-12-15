@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import gsap from 'gsap';
-import { Mic, Moon, Sun, Heart, Share2, ExternalLink, Wifi, WifiOff, Disc, Plus, Music, ChevronDown } from 'lucide-react';
+import { Mic, Moon, Sun, Heart, Share2, ExternalLink, Wifi, WifiOff, Disc, Plus, Music, ChevronDown, X, Link as LinkIcon } from 'lucide-react';
 
 // --- Types ---
 interface SongResult {
@@ -135,8 +135,94 @@ const Header = ({ toggleTheme, wsStatus }: { toggleTheme: () => void, wsStatus: 
   );
 };
 
+// --- Add Song Modal ---
+const AddSongModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: () => void; onAdd: (url: string) => void }) => {
+  const [url, setUrl] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen && inputRef.current) {
+        // small timeout to allow animation to start/render
+        setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!url.trim()) return;
+    
+    setIsSubmitting(true);
+    // Simulate API network delay
+    await new Promise(resolve => setTimeout(resolve, 800));
+    onAdd(url);
+    setIsSubmitting(false);
+    setUrl('');
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center px-6">
+       {/* Backdrop */}
+      <div 
+        className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" 
+        onClick={onClose} 
+      />
+      
+      {/* Modal Content */}
+      <div className="relative w-full max-w-sm bg-[var(--surface)] p-8 rounded-3xl shadow-2xl border border-[var(--highlight)] transform transition-all animate-in fade-in zoom-in-95 slide-in-from-bottom-4 duration-300 flex flex-col items-center">
+        <button 
+          onClick={onClose} 
+          className="absolute right-6 top-6 text-[var(--text-sec)] hover:text-[var(--text)] transition-colors p-2 hover:bg-[var(--highlight)] rounded-full"
+        >
+          <X size={20} />
+        </button>
+        
+        <div className="w-16 h-16 rounded-full bg-[var(--highlight)] flex items-center justify-center text-[var(--text)] mb-6 shadow-inner">
+           <LinkIcon size={32} />
+        </div>
+
+        <h3 className="text-xl font-bold text-[var(--text)] mb-2 tracking-wide">Add from Spotify</h3>
+        <p className="text-sm text-[var(--text-sec)] mb-8 text-center leading-relaxed">
+          Paste a song link to manually add it to your history.
+        </p>
+        
+        <form onSubmit={handleSubmit} className="w-full">
+          <div className="relative mb-6 group">
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-sec)] group-focus-within:text-[var(--accent)] transition-colors">
+              <LinkIcon size={18} />
+            </div>
+            <input 
+              ref={inputRef}
+              type="url" 
+              placeholder="https://open.spotify.com/track/..." 
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              className="w-full bg-[var(--surface-highlight)] text-[var(--text)] text-base rounded-2xl pl-12 pr-4 py-4 outline-none focus:ring-1 focus:ring-[var(--accent)] transition-all placeholder-[var(--text-sec)]/50"
+            />
+          </div>
+          
+          <button 
+            type="submit" 
+            disabled={!url.trim() || isSubmitting}
+            className="w-full bg-[var(--accent)] text-white font-bold text-sm tracking-wider uppercase py-4 rounded-full hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center shadow-lg shadow-[var(--accent)]/20"
+          >
+            {isSubmitting ? (
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              'Add Song'
+            )}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 // --- Waveform Visualizer (Bar Style) ---
-const WaveformVisualizer = ({ isListening, stream }: { isListening: boolean, stream: MediaStream | null }) => {
+const WaveformVisualizer = ({ isListening, stream, visible }: { isListening: boolean, stream: MediaStream | null, visible: boolean }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
 
@@ -230,13 +316,14 @@ const WaveformVisualizer = ({ isListening, stream }: { isListening: boolean, str
   }, [isListening, stream]);
 
   return (
-    <div className="h-16 w-64 flex items-center justify-center mb-8 shrink-0">
+    <div className={`h-16 w-64 flex items-center justify-center mb-8 shrink-0 transition-opacity duration-300 ${visible ? 'opacity-100' : 'opacity-0'}`}>
       <canvas ref={canvasRef} width={256} height={64} className="w-full h-full" />
     </div>
   );
 };
 
-const RecentItem = ({ song }: { song: SongResult }) => (
+// Explicitly typing as React.FC to handle 'key' prop correctly in strict TypeScript environments
+const RecentItem: React.FC<{ song: SongResult }> = ({ song }) => (
   <div className="flex items-center gap-4 w-full p-3 rounded-xl hover:bg-[var(--highlight)] transition-colors cursor-pointer group animate-in fade-in slide-in-from-bottom-2 duration-300">
     <div className="w-12 h-12 rounded-md bg-[var(--highlight)] flex items-center justify-center text-[var(--text-sec)] group-hover:text-[var(--text)] overflow-hidden relative shrink-0">
       {song.coverArt && song.coverArt.startsWith('http') ? (
@@ -253,13 +340,42 @@ const RecentItem = ({ song }: { song: SongResult }) => (
   </div>
 );
 
+// --- Mode Toggle Component ---
+const ModeToggle = ({ mode, setMode }: { mode: 'identify' | 'add', setMode: (m: 'identify' | 'add') => void }) => {
+  return (
+    <div className="flex p-1 bg-[var(--highlight)] rounded-full relative mb-12 shrink-0">
+      <div 
+        className="absolute top-1 bottom-1 rounded-full bg-[var(--text)] transition-all duration-300 ease-[cubic-bezier(0.25,1,0.5,1)]"
+        style={{ 
+          left: mode === 'identify' ? '4px' : '50%', 
+          width: 'calc(50% - 4px)'
+        }}
+      />
+      <button 
+        onClick={() => setMode('identify')}
+        className={`relative z-10 w-28 py-2.5 text-sm font-medium rounded-full transition-colors duration-200 ${mode === 'identify' ? 'text-[var(--bg)]' : 'text-[var(--text-sec)] hover:text-[var(--text)]'}`}
+      >
+        Identify
+      </button>
+      <button 
+        onClick={() => setMode('add')}
+        className={`relative z-10 w-28 py-2.5 text-sm font-medium rounded-full transition-colors duration-200 ${mode === 'add' ? 'text-[var(--bg)]' : 'text-[var(--text-sec)] hover:text-[var(--text)]'}`}
+      >
+        Add Song
+      </button>
+    </div>
+  );
+};
+
 const App = () => {
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [mode, setMode] = useState<'identify' | 'add'>('identify');
   const [isListening, setIsListening] = useState(false);
   const [status, setStatus] = useState('Tap to identify');
   const [wsConnected, setWsConnected] = useState(false);
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
   
   // Recent History Logic
   const [showAllHistory, setShowAllHistory] = useState(false);
@@ -272,7 +388,6 @@ const App = () => {
   ]);
 
   const socketRef = useRef<WebSocket | null>(null);
-
   const displayedSongs = showAllHistory ? recentSongs : recentSongs.slice(0, 3);
 
   // Apply theme
@@ -298,12 +413,7 @@ const App = () => {
   }, []);
 
   const handleFound = (data: any) => {
-    setIsListening(false);
-    setStatus('Tap to identify');
-    if (mediaStream) {
-      mediaStream.getTracks().forEach(t => t.stop());
-      setMediaStream(null);
-    }
+    stopListening();
     // Add to history
     const newSong = {
       title: data.title || "Unknown",
@@ -315,17 +425,16 @@ const App = () => {
     setRecentSongs(prev => [newSong, ...prev]);
   };
 
-  const toggleListening = async () => {
-    if (isListening) {
-      setIsListening(false);
-      setStatus('Tap to identify');
-      if (mediaStream) {
-        mediaStream.getTracks().forEach(t => t.stop());
-        setMediaStream(null);
-      }
-      return;
+  const stopListening = () => {
+    setIsListening(false);
+    setStatus(mode === 'identify' ? 'Tap to identify' : 'Tap to add song');
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(t => t.stop());
+      setMediaStream(null);
     }
+  };
 
+  const startListening = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       setMediaStream(stream);
@@ -345,7 +454,46 @@ const App = () => {
       }
     } catch (e) {
       setStatus('Microphone denied');
+      setIsListening(false);
     }
+  };
+
+  const handleConfirmAddSong = (url: string) => {
+      // Simulate Adding a Song Manually from URL
+      // In a real app, you would parse the URL ID and fetch metadata
+      const fakeSongs = [
+         { title: "New Gold", artist: "Gorillaz", coverArt: "", timeAgo: "Just now" },
+         { title: "Glimpse of Us", artist: "Joji", coverArt: "", timeAgo: "Just now" },
+         { title: "As It Was", artist: "Harry Styles", coverArt: "", timeAgo: "Just now" }
+      ];
+      const random = fakeSongs[Math.floor(Math.random() * fakeSongs.length)];
+      
+      const newSong = { ...random, album: "Manual Add" };
+      setRecentSongs(prev => [newSong, ...prev]);
+      setStatus('Song Added!');
+      setTimeout(() => setStatus('Tap to add song'), 1500);
+  };
+
+  const handleMainAction = () => {
+    if (mode === 'identify') {
+      if (isListening) {
+        stopListening();
+      } else {
+        startListening();
+      }
+    } else {
+      setShowAddModal(true);
+    }
+  };
+
+  const handleModeChange = (newMode: 'identify' | 'add') => {
+    if (newMode === mode) return;
+    setMode(newMode);
+    
+    // Reset state on mode switch
+    if (isListening) stopListening();
+    
+    setStatus(newMode === 'identify' ? 'Tap to identify' : 'Tap to add song');
   };
 
   if (loading) {
@@ -361,6 +509,13 @@ const App = () => {
     <div className="w-full h-full min-h-screen flex flex-col items-center bg-[var(--bg)] text-[var(--text)] transition-colors duration-300 relative overflow-y-auto no-scrollbar">
       <GlobalStyles />
       
+      {/* Modals */}
+      <AddSongModal 
+        isOpen={showAddModal} 
+        onClose={() => setShowAddModal(false)} 
+        onAdd={handleConfirmAddSong} 
+      />
+      
       {/* 1. Header */}
       <Header 
         toggleTheme={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')} 
@@ -375,39 +530,47 @@ const App = () => {
           {status}
         </p>
 
-        {/* Main Mic Button */}
+        {/* Main Action Button */}
         <div className="relative mb-8 group shrink-0">
-          {/* Animated Glow Ring when listening */}
-          <div className={`absolute inset-0 rounded-full bg-[var(--accent)] blur-2xl transition-all duration-1000 ${isListening ? 'opacity-20 scale-150' : 'opacity-0 scale-100'}`}></div>
+          {/* Animated Glow Ring when listening in Identify mode */}
+          <div className={`absolute inset-0 rounded-full bg-[var(--accent)] blur-2xl transition-all duration-1000 ${isListening && mode === 'identify' ? 'opacity-20 scale-150' : 'opacity-0 scale-100'}`}></div>
           
           <button 
-            onClick={toggleListening}
+            onClick={handleMainAction}
             className={`
               w-40 h-40 rounded-full flex items-center justify-center z-10 relative
               bg-[var(--surface-dark)] 
-              border-[1px] border-[var(--ring-color)]
-              transition-transform duration-300 ease-in-out
+              border-[1px] 
+              transition-all duration-300 ease-in-out
               active:scale-95
               shadow-2xl
-              ${isListening ? 'scale-105 border-[var(--accent)]' : 'hover:scale-105'}
+              ${(isListening && mode === 'identify') 
+                  ? 'scale-105 border-[var(--accent)]' 
+                  : 'border-[var(--ring-color)] hover:scale-105 hover:border-[var(--text-sec)]'
+              }
             `}
           >
-             <Mic 
-              size={48} 
-              className={`transition-colors duration-300 ${isListening ? 'text-[var(--accent)]' : 'text-white'}`} 
-              strokeWidth={1.5}
-            />
+             {mode === 'identify' ? (
+               <Mic 
+                size={48} 
+                className={`transition-colors duration-300 ${isListening ? 'text-[var(--accent)]' : 'text-white'}`} 
+                strokeWidth={1.5}
+              />
+             ) : (
+               <Plus 
+                size={48} 
+                className="text-white transition-transform duration-300 group-active:rotate-90" 
+                strokeWidth={1.5}
+              />
+             )}
           </button>
         </div>
 
-        {/* Visualizer (Replaces the large one) */}
-        <WaveformVisualizer isListening={isListening} stream={mediaStream} />
+        {/* Visualizer (Only visible in Identify Mode) */}
+        <WaveformVisualizer isListening={isListening} stream={mediaStream} visible={mode === 'identify'} />
 
-        {/* Action Button */}
-        <button className="flex items-center gap-2 px-6 py-3 rounded-full bg-[var(--highlight)] text-[var(--text)] text-sm font-medium hover:bg-[var(--surface-light)]/10 transition-colors border border-[var(--ring-color)] mb-12 shrink-0">
-          <Plus size={16} />
-          <span>Add Song</span>
-        </button>
+        {/* Mode Toggle Slider */}
+        <ModeToggle mode={mode} setMode={handleModeChange} />
 
       </div>
 

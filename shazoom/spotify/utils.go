@@ -39,35 +39,23 @@ func GetFileSize(file string) (int64, error) {
 	return size, nil
 }
 
-func SongKeyExists(key string) (bool, error) {
-	db, err := db.NewDBClient()
+
+func SongKeyExists(key string, dbClient db.DBClient) (bool, error) {
+	_, songExists, err := dbClient.GetSongByKey(key)
 	if err != nil {
 		return false, err
 	}
-	defer db.Close()
-
-	_, songExists, err := db.GetSongByKey(key)
-	if err != nil {
-		return false, err
-	}
-
 	return songExists, nil
 }
 
-func YtIDExists(ytID string) (bool, error) {
-	db, err := db.NewDBClient()
+func YtIDExists(ytID string, dbClient db.DBClient) (bool, error) {
+	_, songExits, err := dbClient.GetSongByYTID(ytID)
 	if err != nil {
 		return false, err
 	}
-	defer db.Close()
-
-	_, songExits, err := db.GetSongByYTID(ytID)
-	if err != nil {
-		return false, err
-	}
-
 	return songExits, nil
 }
+
 
 /* fixes some invalid file names (windows is the capricious one) */
 func correctFilename(title, artist string) (string, string) {

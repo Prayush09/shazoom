@@ -8,21 +8,20 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"shazoom/db"
 	"shazoom/core"
+	"shazoom/db"
 	"shazoom/utils"
 	"strings"
 	"sync"
 	"time"
-	"github.com/fatih/color"
+
 	"github.com/mdobak/go-xerrors"
 )
 
-const DELETE_SONG_FILE = false 
+const DELETE_SONG_FILE = false
 
-var yellow = color.New(color.FgYellow)
-
-func DlSingleTrack(url, savePath string) (int, error) {
+// Added dbClient to signature
+func DlSingleTrack(url, savePath string, dbClient db.DBClient) (int, error) {
 	logger := utils.GetLogger()
 	logger.Info("Getting track info", slog.String("url", url))
 	trackInfo, err := TrackInfo(url)
@@ -31,17 +30,11 @@ func DlSingleTrack(url, savePath string) (int, error) {
 	}
 
 	track := []Track{*trackInfo}
-
 	logger.Info("Now downloading track")
-	totalTracksDownloaded, err := dlTrack(track, savePath)
-	if err != nil {
-		return 0, err
-	}
-
-	return totalTracksDownloaded, nil
+	return dlTrack(track, savePath, dbClient)
 }
 
-func DlPlaylist(url, savePath string) (int, error) {
+func DlPlaylist(url, savePath string, dbClient db.DBClient) (int, error) {
 	logger := utils.GetLogger()
 	tracks, err := PlaylistInfo(url)
 	if err != nil {
@@ -50,15 +43,10 @@ func DlPlaylist(url, savePath string) (int, error) {
 
 	time.Sleep(1 * time.Second)
 	logger.Info("Now downloading playlist")
-	totalTracksDownloaded, err := dlTrack(tracks, savePath)
-	if err != nil {
-		return 0, err
-	}
-
-	return totalTracksDownloaded, nil
+	return dlTrack(tracks, savePath, dbClient)
 }
 
-func DlAlbum(url, savePath string) (int, error) {
+func DlAlbum(url, savePath string, dbClient db.DBClient) (int, error) {
 	logger := utils.GetLogger()
 	tracks, err := AlbumInfo(url)
 	if err != nil {
@@ -67,39 +55,24 @@ func DlAlbum(url, savePath string) (int, error) {
 
 	time.Sleep(1 * time.Second)
 	logger.Info("Now downloading album")
-	totalTracksDownloaded, err := dlTrack(tracks, savePath)
-	if err != nil {
-		return 0, err
-	}
-
-	return totalTracksDownloaded, nil
+	return dlTrack(tracks, savePath, dbClient)
 }
 
-func dlTrack(tracks []Track, path string) (int, error) {
+func dlTrack(tracks []Track, path string, dbClient db.DBClient) (int, error) {
 	var wg sync.WaitGroup
-	var downloadedTracks []string
 	var totalTracks int
 	logger := utils.GetLogger()
 	results := make(chan int, len(tracks))
 	numCPUs := runtime.NumCPU()
 	semaphore := make(chan struct{}, numCPUs)
-
 	ctx := context.Background()
-
-	db, err := db.NewDBClient()
-	if err != nil {
-		return 0, err
-	}
-	defer db.Close()
 
 	for _, t := range tracks {
 		wg.Add(1)
 		go func(track Track) {
 			defer wg.Done()
 			semaphore <- struct{}{}
-			defer func() {
-				<-semaphore
-			}()
+			defer func() { <-semaphore }()
 
 			trackCopy := &Track{
 				Album:    track.Album,
@@ -109,22 +82,19 @@ func dlTrack(tracks []Track, path string) (int, error) {
 				Title:    track.Title,
 			}
 
-			// check if song exists
-			keyExists, err := SongKeyExists(utils.GenerateSongKey(trackCopy.Title, trackCopy.Artist))
+			// check if song exists using shared client
+			keyExists, err := SongKeyExists(utils.GenerateSongKey(trackCopy.Title, trackCopy.Artist), dbClient)
 			if err != nil {
-				err := xerrors.New(err)
-				logger.ErrorContext(ctx, "error checking song existence", slog.Any("error", err))
+				logger.ErrorContext(ctx, "error checking song existence", slog.Any("error", xerrors.New(err)))
 			}
 			if keyExists {
-				logMessage := fmt.Sprintf("'%s' by '%s' already exists.", trackCopy.Title, trackCopy.Artist)
-				logger.Info(logMessage)
+				logger.Info(fmt.Sprintf("'%s' by '%s' already exists.", trackCopy.Title, trackCopy.Artist))
 				return
 			}
 
-			ytID, err := getYTID(trackCopy)
+			ytID, err := getYTID(trackCopy, dbClient)
 			if ytID == "" || err != nil {
-				logMessage := fmt.Sprintf("'%s' by '%s' could not be downloaded", trackCopy.Title, trackCopy.Artist)
-				logger.ErrorContext(ctx, logMessage, slog.Any("error", xerrors.New(err)))
+				logger.ErrorContext(ctx, "Download failed", slog.Any("error", xerrors.New(err)))
 				return
 			}
 
@@ -132,35 +102,27 @@ func dlTrack(tracks []Track, path string) (int, error) {
 			fileName := fmt.Sprintf("%s - %s", trackCopy.Title, trackCopy.Artist)
 			filePath := filepath.Join(path, fileName)
 
-			filePath, err = downloadYTaudio(ytID, filePath)
+			downloadedPath, err := downloadYTaudio(ytID, filePath)
 			if err != nil {
-				logMessage := fmt.Sprintf("'%s' by '%s' could not be downloaded", trackCopy.Title, trackCopy.Artist)
-				logger.ErrorContext(ctx, logMessage, slog.Any("error", xerrors.New(err)))
+				logger.ErrorContext(ctx, "yt-dlp failed", slog.Any("error", xerrors.New(err)))
 				return
 			}
 
-			err = ProcessAndSaveSong(filePath, trackCopy.Title, trackCopy.Artist, ytID)
+			// Pass client to processing
+			err = ProcessAndSaveSong(downloadedPath, trackCopy.Title, trackCopy.Artist, ytID, dbClient)
 			if err != nil {
-				logMessage := fmt.Sprintf("Failed to process song ('%s' by '%s')", trackCopy.Title, trackCopy.Artist)
-				logger.ErrorContext(ctx, logMessage, slog.Any("error", xerrors.New(err)))
+				logger.ErrorContext(ctx, "DB save failed", slog.Any("error", xerrors.New(err)))
 				return
 			}
 
 			wavFilePath := filepath.Join(path, fileName+".wav")
-
-			if err := addTags(wavFilePath, *trackCopy); err != nil {
-				logMessage := fmt.Sprintf("Error adding tags: %s", wavFilePath)
-				logger.ErrorContext(ctx, logMessage, slog.Any("error", xerrors.New(err)))
-
-				return
-			}
+			_ = addTags(wavFilePath, *trackCopy)
 
 			if DELETE_SONG_FILE {
 				utils.DeleteFile(wavFilePath)
 			}
 
 			logger.Info(fmt.Sprintf("'%s' by '%s' was downloaded", track.Title, track.Artist))
-			downloadedTracks = append(downloadedTracks, fmt.Sprintf("%s, %s", track.Title, track.Artist))
 			results <- 1
 		}(t)
 	}
@@ -173,112 +135,85 @@ func dlTrack(tracks []Track, path string) (int, error) {
 	for range results {
 		totalTracks++
 	}
-
-	logger.Info(fmt.Sprintf("Total tracks downloaded: %d", totalTracks))
 	return totalTracks, nil
-
 }
 
 func addTags(file string, track Track) error {
 	logger := utils.GetLogger()
-	// Create a temporary file name by appending "2" before the extension
-	tempFile := file
-	index := strings.Index(file, ".wav")
-	if index != -1 {
-		baseName := tempFile[:index]       // Filename without extension ('/path/to/title - artist')
-		tempFile = baseName + "2" + ".wav" // Temporary filename ('/path/to/title - artist2.wav')
-	}
+	
+	// Create a temporary file name to avoid editing in-place
+	tempFile := strings.TrimSuffix(file, ".wav") + "_tagged.wav"
 
 	// FFmpeg command to add metadata tags
+	// -i: input file
+	// -c:copy: copy the audio stream without re-encoding
+	// -metadata: sets the specific key=value pairs
 	cmd := exec.Command(
 		"ffmpeg",
-		"-i", file, // Input file path
+		"-i", file, 
 		"-c", "copy",
-		"-metadata", fmt.Sprintf("album_artist=%s", track.Artist),
 		"-metadata", fmt.Sprintf("title=%s", track.Title),
 		"-metadata", fmt.Sprintf("artist=%s", track.Artist),
+		"-metadata", fmt.Sprintf("album_artist=%s", track.Artist),
 		"-metadata", fmt.Sprintf("album=%s", track.Album),
-		tempFile, // Output file path (temporary)
+		"-y", // overwrite output file if it exists
+		tempFile, 
 	)
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		logger.Error("Failed to add tags", slog.Any("error", err), slog.String("output", string(out)))
-		return fmt.Errorf("failed to add tags: %v, output: %s", err, string(out))
+		logger.Error("Failed to add tags via ffmpeg", slog.Any("error", err), slog.String("output", string(out)))
+		return fmt.Errorf("failed to add tags: %v", err)
 	}
 
-	// Rename the temporary file to the original filename
+	// Replace the original file with the tagged version
 	if err := os.Rename(tempFile, file); err != nil {
-		logger.Error("Failed to rename file", slog.Any("error", err))
+		logger.Error("Failed to rename tagged file", slog.Any("error", err))
 		return fmt.Errorf("failed to rename file: %v", err)
 	}
 
 	return nil
 }
 
-func ProcessAndSaveSong(songFilePath, songTitle, songArtist, ytID string) error {
+func ProcessAndSaveSong(songFilePath, songTitle, songArtist, ytID string, dbClient db.DBClient) error {
 	logger := utils.GetLogger()
-	dbclient, err := db.NewDBClient()
-	if err != nil {
-		logger.Error("Failed to create DB client", slog.Any("error", err))
-		return err
-	}
-	defer dbclient.Close()
 
-	songID, err := dbclient.RegisterSong(songTitle, songArtist, ytID)
+	// Register the song
+	songID, err := dbClient.RegisterSong(songTitle, songArtist, ytID)
 	if err != nil {
-		logger.Error("Failed to register song", slog.Any("error", err))
-		return fmt.Errorf("error registering song '%s' by '%s': %v", songTitle, songArtist, err)
+		return err
 	}
 
 	fingerprint, err := core.GenerateFingerprints(songFilePath, songID)
 	if err != nil {
-		dbclient.DeleteSongByID(songID)
-		logger.Error("Failed to create fingerprint", slog.String("wavFilePath", songFilePath))
-		return fmt.Errorf("error generating fingerprint for %s by %s", songTitle, songArtist)
+		_ = dbClient.DeleteSongByID(songID)
+		return err
 	}
 
-	err = dbclient.StoreFingerprints(fingerprint)
+	err = dbClient.StoreFingerprints(fingerprint)
 	if err != nil {
-		dbclient.DeleteSongByID(songID)
-		logger.Error("Failed to store fingerprints", slog.Any("error", err))
-		return fmt.Errorf("error storing fingerprint: %v", err)
+		_ = dbClient.DeleteSongByID(songID)
+		return err
 	}
 
-	logger.Info(fmt.Sprintf("Fingerprint for %v by %v saved in DB successfully", songTitle, songArtist))
+	logger.Info(fmt.Sprintf("Fingerprint for %v by %v saved successfully", songTitle, songArtist))
 	return nil
 }
 
-func getYTID(trackCopy *Track) (string, error) {
-	logger := utils.GetLogger()
+func getYTID(trackCopy *Track, dbClient db.DBClient) (string, error) {
 	ytID, err := GetYoutubeId(*trackCopy)
 	if ytID == "" || err != nil {
 		return "", err
 	}
 
-	// Check if YouTube ID exists
-	ytidExists, err := YtIDExists(ytID)
+	// Check if YouTube ID exists using shared client
+	ytidExists, err := YtIDExists(ytID, dbClient)
 	if err != nil {
-		return "", fmt.Errorf("error checking YT ID existence: %v", err)
+		return "", err
 	}
 
-	if ytidExists { // try to get the YouTube ID again
-		logMessage := fmt.Sprintf("YouTube ID (%s) exists. Trying again...", ytID)
-		logger.Warn(logMessage)
-
-		ytID, err = GetYoutubeId(*trackCopy)
-		if ytID == "" || err != nil {
-			return "", err
-		}
-
-		ytidExists, err = YtIDExists(ytID)
-		if err != nil {
-			return "", fmt.Errorf("error checking YT ID existence: %v", err)
-		}
-
-		if ytidExists {
-			return "", fmt.Errorf("youTube ID (%s) exists", ytID)
-		}
+	if ytidExists {
+		return "", fmt.Errorf("youTube ID (%s) already exists in DB", ytID)
 	}
 
 	return ytID, nil

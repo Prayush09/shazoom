@@ -321,3 +321,9 @@ ok      shazoom/test    11.876s
 - Socket function will be in websockets
 - Server function include ensuring calls to the core algo, DB and back and relaying data with socket functions.
 - Main function will ensure that the application data is stored appropriately on the running VM, and invoking the server.
+
+
+## 20th Dec 2025
+
+- Completed the frontend, integrated spotify and youtube and fully functional backend!
+- Need to integrate somemore functions into the frontend before I push to prod!

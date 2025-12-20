@@ -5,10 +5,16 @@ export interface SongResult {
   album: string;
   coverArt: string;
   timeAgo: string;
+  score?: number;
 }
 
-export interface WebSocketMessage {
-  type: 'status' | 'result' | 'error';
-  data?: any;
-  message?: string;
+export interface MatchResult {
+  SongTitle: string;
+  SongArtist: string;
+  Score: number;
+}
+
+export interface DownloadStatus {
+  type: 'info' | 'success' | 'error';
+  message: string;
 }

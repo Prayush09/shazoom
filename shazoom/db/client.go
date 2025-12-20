@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"shazoom/models"
 	"shazoom/utils"
-	"github.com/joho/godotenv"
 )
 
 type DBClient interface {
@@ -29,11 +28,6 @@ type Song struct {
 }
 
 func setupTestEnv() {
-	err := godotenv.Load("../.env")
-	if err != nil {
-		fmt.Printf("Warning: Could not load .env file: %v. Relying on shell exports.", err)
-	}
-
 	DB_HOST := utils.GetEnv("DB_HOST")
 	DB_PORT := utils.GetEnv("DB_PORT")
 	DB_PASS := utils.GetEnv("DB_PASS")
@@ -62,6 +56,8 @@ func NewDBClient() (DBClient, error) {
 		dbPort = utils.GetEnv("DB_PORT")
 		dbName = utils.GetEnv("DB_NAME")
 	)
+
+	fmt.Printf("DEBUG: Connecting to %s as user %s\n", dbHost, dbUser)
 
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=require",
 		dbUser, dbPass, dbHost, dbPort, dbName)

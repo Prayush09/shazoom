@@ -23,7 +23,7 @@ import (
 
 
 
-//TODO: Implement the youtube feature on frontend!
+
 func getYoutubeIdWithAPI(spTrack Track) (string, error) {
 	err := godotenv.Load();
 	if err != nil {

@@ -10,10 +10,12 @@ export const useAudioRecorder = ({ onRecordingComplete, onError }: UseAudioRecor
   const [isListening, setIsListening] = useState(false);
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioDataRef = useRef<number[]>([]);
+  const sampleRateRef = useRef<number>(44100);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Clean up on unmount
   useEffect(() => {
     return () => {
       stopListening();
@@ -25,109 +27,89 @@ export const useAudioRecorder = ({ onRecordingComplete, onError }: UseAudioRecor
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-    }
     
     setIsListening(false);
-  };
-
-  const cancelRecording = () => {
-    chunksRef.current = [];
-    stopListening();
+    
     if (mediaStream) {
       mediaStream.getTracks().forEach(t => t.stop());
       setMediaStream(null);
+    }
+    
+    if (audioContextRef.current) {
+      if (audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close();
+      }
+      audioContextRef.current = null;
     }
   };
 
   const startListening = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: false,
-          autoGainControl: false,
-          noiseSuppression: false,
-          channelCount: 1
-        } 
-      });
-      
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       setMediaStream(stream);
       setIsListening(true);
-      chunksRef.current = [];
+      audioDataRef.current = [];
 
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({
+        sampleRate: 44100,
+      });
+      // Capture actual sample rate
+      sampleRateRef.current = audioCtx.sampleRate;
+      audioContextRef.current = audioCtx;
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunksRef.current.push(e.data);
+      const source = audioCtx.createMediaStreamSource(stream);
+      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+      processor.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        for (let i = 0; i < inputData.length; i++) {
+          audioDataRef.current.push(inputData[i]);
         }
       };
 
-      mediaRecorder.onstop = async () => {
-        if (chunksRef.current.length === 0) {
-            if (stream) stream.getTracks().forEach(t => t.stop());
-            setMediaStream(null);
-            return;
-        }
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
 
-        const blob = new Blob(chunksRef.current, { type: mediaRecorder.mimeType });
-        
-        if (stream) stream.getTracks().forEach(t => t.stop());
-        setMediaStream(null);
-        
-        await processRecording(blob);
-      };
-
-      mediaRecorder.start();
-
+      // Auto-stop after 8 seconds
       timerRef.current = setTimeout(() => {
-        stopListening();
+        processRecording();
       }, 8000);
 
     } catch (e) {
       console.error(e);
-      onError('Microphone denied or not available');
+      onError('Microphone denied');
       setIsListening(false);
     }
   };
 
-  const processRecording = async (blob: Blob) => {
+  const processRecording = () => {
+    // If buffer is empty, it means we probably cancelled
+    if (audioDataRef.current.length === 0) return;
+
+    const rate = sampleRateRef.current;
+    const data = audioDataRef.current;
+
+    stopListening(); // Updates isListening -> false
+    
     try {
-      const arrayBuffer = await blob.arrayBuffer();
-      // Enforce 44.1kHz sample rate for backend compatibility
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({
-        sampleRate: 44100,
-      });
-      
-      const decodedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-      
-      const sampleRate = audioCtx.sampleRate;
-      const pcmData = decodedBuffer.getChannelData(0); // Mono
-      
-      const pcm16Buffer = floatTo16BitPCM(Array.from(pcmData));
-      const base64Audio = arrayBufferToBase64(pcm16Buffer);
-      
+      const pcmBuffer = floatTo16BitPCM(data);
+      const base64Audio = arrayBufferToBase64(pcmBuffer);
       const payload = JSON.stringify({
           audio: base64Audio,
-          sampleRate: sampleRate,
+          sampleRate: rate,
           channels: 1,
-          sampleSize: 16, // Explicitly add sampleSize as required by backend
-          duration: decodedBuffer.duration
       });
-
       onRecordingComplete(payload);
-
-      if (audioCtx.state !== 'closed') {
-        audioCtx.close();
-      }
-
+      audioDataRef.current = [];
     } catch (e) {
-      console.error("Processing failed", e);
-      onError('Error processing audio recording');
+      console.error(e);
+      onError('Error processing audio');
     }
+  };
+
+  const cancelRecording = () => {
+    stopListening();
+    audioDataRef.current = []; // Clear buffer so processRecording doesn't fire
   };
 
   return { isListening, startListening, cancelRecording, mediaStream };

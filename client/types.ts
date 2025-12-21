@@ -1,3 +1,4 @@
+
 export interface SongResult {
   title: string;
   artist: string;
@@ -5,14 +6,12 @@ export interface SongResult {
   coverArt: string;
   timeAgo: string;
   score?: number;
-  youtubeId?: string;
 }
 
 export interface MatchResult {
   SongTitle: string;
   SongArtist: string;
   Score: number;
-  YouTubeID?: string;
 }
 
 export interface DownloadStatus {

@@ -17,7 +17,8 @@ import { ModeToggle } from './components/ModeToggle';
 
 import { SongResult, MatchResult, DownloadStatus } from './types';
 
-const SOCKET_URL = 'http://localhost:3001'; 
+const SOCKET_URL = 'http://localhost:5001'; //TODO: In prod change this to the actual deployed domain and change scripts to match the domain
+
 
 export const App = () => {
   const [loading, setLoading] = useState(true);
@@ -29,7 +30,6 @@ export const App = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [recentSongs, setRecentSongs] = useState<SongResult[]>([]);
-  const [totalSongs, setTotalSongs] = useState(0);
 
   const displayedSongs = showAllHistory ? recentSongs : recentSongs.slice(0, 3);
 
@@ -43,10 +43,8 @@ export const App = () => {
         album: "", 
         coverArt: "", 
         timeAgo: "Just now",
-        score: bestMatch.Score,
-        youtubeId: bestMatch.YouTubeID
+        score: bestMatch.Score
       };
-      // Prevent duplicate processing if needed, or just prepend
       setRecentSongs(prev => [newSong, ...prev]);
       setStatus(`Found: ${bestMatch.SongTitle}`);
     } else {
@@ -69,8 +67,7 @@ export const App = () => {
   const { socket, isConnected } = useSocket({
     url: SOCKET_URL,
     onMatch: handleMatch,
-    onDownloadStatus: handleDownloadStatus,
-    onTotalSongs: (count) => setTotalSongs(count)
+    onDownloadStatus: handleDownloadStatus
   });
 
   const { isListening, startListening, cancelRecording, mediaStream } = useAudioRecorder({
@@ -149,7 +146,6 @@ export const App = () => {
       <Header 
         toggleTheme={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')} 
         wsStatus={isConnected} 
-        totalSongs={totalSongs}
       />
 
       {/* Main Interaction Area */}

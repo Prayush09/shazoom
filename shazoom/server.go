@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"shazoom/spotify"
-	"github.com/googollee/go-socket.io/engineio/transport/polling"
+
 	"github.com/fatih/color"
 	socketio "github.com/googollee/go-socket.io"
 	"github.com/googollee/go-socket.io/engineio"
@@ -118,18 +118,15 @@ func serve(protocol, port string, dbClient db.DBClient) {
         return true 
     }
 
-   server := socketio.NewServer(&engineio.Options{
-    Transports: []transport.Transport{
-			&polling.Transport{
-				CheckOrigin: allowOrigin,
-			},
-			&websocket.Transport{
-				CheckOrigin: allowOrigin,
-			},
-		},
-		PingTimeout:  time.Second * 30,
-		PingInterval: time.Second * 10,
-	})
+    server := socketio.NewServer(&engineio.Options{
+        Transports: []transport.Transport{
+            &websocket.Transport{
+                CheckOrigin: allowOrigin,
+            },
+        },
+        PingTimeout:  time.Second * 30,
+        PingInterval: time.Second * 10,
+    })
 
     server.OnConnect("/", func(c socketio.Conn) error {
         c.SetContext("") 

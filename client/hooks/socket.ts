@@ -7,8 +7,7 @@ export function getSocket(url: string): SocketIOClient.Socket {
   if (socket) return socket;
 
   socket = io(url, {
-    transports: ['websocket'],
-    upgrade: false,
+    transports: ['polling', 'websocket'],
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,

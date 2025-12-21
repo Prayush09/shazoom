@@ -97,13 +97,6 @@ func handleSongDownload(socket socketio.Conn, spotifyURL string, dbClient db.DBC
 			return
 		}
 
-		dbClient, err := db.NewDBClient()
-		if err != nil {
-			logger.ErrorContext(ctx, "DB connection failed", slog.Any("error", err))
-			return
-		}
-		defer dbClient.Close()
-
 		key := utils.GenerateSongKey(track.Title, track.Artist)
 		existing, exists, err := dbClient.GetSongByKey(key)
 		if err == nil && exists {
@@ -129,7 +122,7 @@ func handleSongDownload(socket socketio.Conn, spotifyURL string, dbClient db.DBC
 	}
 }
 
-func handleNewRecording(socket socketio.Conn, recordData string, dbClient db.DBClient) {
+func handleNewRecording(socket socketio.Conn, recordData string) {
 	logger := utils.GetLogger()
 	ctx := context.Background()
 

@@ -25,6 +25,7 @@ import (
 	socketio "github.com/googollee/go-socket.io"
 	"github.com/googollee/go-socket.io/engineio"
 	"github.com/googollee/go-socket.io/engineio/transport"
+	"github.com/googollee/go-socket.io/engineio/transport/polling"
 	"github.com/googollee/go-socket.io/engineio/transport/websocket"
 	"github.com/mdobak/go-xerrors"
 )
@@ -118,15 +119,18 @@ func serve(protocol, port string, dbClient db.DBClient) {
         return true 
     }
 
-    server := socketio.NewServer(&engineio.Options{
-        Transports: []transport.Transport{
-            &websocket.Transport{
-                CheckOrigin: allowOrigin,
-            },
-        },
-        PingTimeout:  time.Second * 30,
-        PingInterval: time.Second * 10,
-    })
+   server := socketio.NewServer(&engineio.Options{
+    Transports: []transport.Transport{
+		&polling.Transport{
+				CheckOrigin: allowOrigin,
+			},
+		&websocket.Transport{
+				CheckOrigin: allowOrigin,
+			},
+		},
+		PingTimeout:  time.Second * 30,
+		PingInterval: time.Second * 10,
+	})
 
     server.OnConnect("/", func(c socketio.Conn) error {
         c.SetContext("") 
@@ -145,7 +149,7 @@ func serve(protocol, port string, dbClient db.DBClient) {
     })
 
     server.OnEvent("/", "newRecording", func(s socketio.Conn, data string) {
-        handleNewRecording(s, data, dbClient)
+        handleNewRecording(s, data)
     })
 
     // ------------------------------------------

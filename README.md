@@ -327,3 +327,8 @@ ok      shazoom/test    11.876s
 
 - Completed the frontend, integrated spotify and youtube and fully functional backend!
 - Need to integrate somemore functions into the frontend before I push to prod!
+
+## 22nd DEC 2025
+
+- Implemented the youtube video player in the frontend
+- Fixed the socket io issues as go has EOF v3 and Present socket io is EOF v4, solved using v2.5 version which has moderate level vulnerabilities, not ideal but I it's a hobby project for my resume so it doesn't hurt.

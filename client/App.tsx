@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mic, Plus, ChevronDown } from 'lucide-react';
+import { Mic, Plus, ChevronDown, X } from 'lucide-react';
 
 // Hooks
 import { useSocket } from './hooks/useSocket';
@@ -13,7 +13,7 @@ import { AddSongModal } from './components/AddSongModal';
 import { WaveformVisualizer } from './components/WaveformVisualizer';
 import { RecentItem } from './components/RecentItem';
 import { ModeToggle } from './components/ModeToggle';
-
+import { MatchResultCard } from './components/MatchResultCard'; // Imported
 
 import { SongResult, MatchResult, DownloadStatus } from './types';
 
@@ -28,7 +28,10 @@ export const App = () => {
   const [status, setStatus] = useState('Tap to identify');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAllHistory, setShowAllHistory] = useState(false);
+  
   const [recentSongs, setRecentSongs] = useState<SongResult[]>([]);
+  const [identifiedSong, setIdentifiedSong] = useState<SongResult | null>(null); // State for the currently found song
+  
   const [totalSongs, setTotalSongs] = useState(0);
 
   const displayedSongs = showAllHistory ? recentSongs : recentSongs.slice(0, 3);
@@ -37,6 +40,10 @@ export const App = () => {
     setIsProcessing(false);
     if (matches && matches.length > 0) {
       const bestMatch = matches[0];
+      // Map MatchResult to SongResult, ensuring we capture the ID from various potential case styles
+      // The logger in useSocket will confirm the exact casing if this fails.
+      const youtubeId = bestMatch.YouTubeID || (bestMatch as any).YoutubeID || (bestMatch as any).videoID || (bestMatch as any).youtube_id;
+      
       const newSong: SongResult = {
         title: bestMatch.SongTitle,
         artist: bestMatch.SongArtist,
@@ -44,10 +51,15 @@ export const App = () => {
         coverArt: "", 
         timeAgo: "Just now",
         score: bestMatch.Score,
-        youtubeId: bestMatch.YouTubeID
+        youtubeId: youtubeId
       };
-      // Prevent duplicate processing if needed, or just prepend
+      
+      // Update Recent History
       setRecentSongs(prev => [newSong, ...prev]);
+      
+      // Set the main identified song to show the card
+      setIdentifiedSong(newSong);
+      
       setStatus(`Found: ${bestMatch.SongTitle}`);
     } else {
       setStatus('No matches found.');
@@ -101,6 +113,11 @@ export const App = () => {
 
   const handleMainAction = () => {
     if (mode === 'identify') {
+      // Clear previous identification when starting new
+      if (!isListening) {
+        setIdentifiedSong(null);
+      }
+
       if (isListening) {
         cancelRecording();
         setStatus('Cancelled');
@@ -121,7 +138,7 @@ export const App = () => {
     if (isListening) {
       cancelRecording();
     }
-    
+    setIdentifiedSong(null); // Clear result on mode switch
     setStatus(newMode === 'identify' ? 'Tap to identify' : 'Tap to add song');
   };
 
@@ -155,53 +172,78 @@ export const App = () => {
       {/* Main Interaction Area */}
       <div className="flex-1 flex flex-col items-center justify-center w-full max-w-md px-6 shrink-0 min-h-[500px]">
         
-        {/* Helper Text */}
-        <p className={`text-sm font-medium mb-12 tracking-wide transition-opacity duration-300 ${isListening ? 'opacity-50' : 'opacity-80 text-[var(--text-sec)]'}`}>
-          {status}
-        </p>
+        {/* Identified Song Card (Replaces Visualizer/Buttons when found) */}
+        {identifiedSong && !isListening && !isProcessing ? (
+          <div className="w-full animate-in fade-in zoom-in-95 duration-500 mb-8 relative">
+             <button 
+                onClick={() => setIdentifiedSong(null)}
+                className="absolute -top-12 right-0 text-[var(--text-sec)] hover:text-[var(--text)] flex items-center gap-1 text-xs uppercase tracking-widest font-bold py-2 px-4 rounded-full bg-[var(--surface-highlight)] hover:bg-[var(--surface)] transition-all"
+             >
+                <X size={14} /> Close
+             </button>
+             <MatchResultCard song={identifiedSong} index={0} />
+             
+             {/* Action to identify again below the card */}
+             <div className="flex justify-center mt-8">
+               <button 
+                  onClick={handleMainAction}
+                  className="bg-[var(--accent)] text-white font-bold rounded-full px-8 py-3 shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+               >
+                 <Mic size={20} /> Identify Another
+               </button>
+             </div>
+          </div>
+        ) : (
+          <>
+            {/* Helper Text */}
+            <p className={`text-sm font-medium mb-12 tracking-wide transition-opacity duration-300 ${isListening ? 'opacity-50' : 'opacity-80 text-[var(--text-sec)]'}`}>
+              {status}
+            </p>
 
-        {/* Main Action Button */}
-        <div className="relative mb-8 group shrink-0">
-          <div className={`absolute inset-0 rounded-full bg-[var(--accent)] blur-2xl transition-all duration-1000 ${isListening && mode === 'identify' ? 'opacity-20 scale-150' : 'opacity-0 scale-100'}`}></div>
-          
-          <button 
-            onClick={handleMainAction}
-            disabled={isProcessing}
-            className={`
-              w-40 h-40 rounded-full flex items-center justify-center z-10 relative
-              bg-[var(--surface-dark)] 
-              border-[1px] 
-              transition-all duration-300 ease-in-out
-              active:scale-95
-              shadow-2xl
-              ${(isListening && mode === 'identify') 
-                  ? 'scale-105 border-[var(--accent)]' 
-                  : 'border-[var(--ring-color)] hover:scale-105 hover:border-[var(--text-sec)]'
-              }
-              ${isProcessing ? 'opacity-50 cursor-wait' : ''}
-            `}
-          >
-             {mode === 'identify' ? (
-               <Mic 
-                size={48} 
-                className={`transition-colors duration-300 ${isListening ? 'text-[var(--accent)]' : 'text-white'}`} 
-                strokeWidth={1.5}
-              />
-             ) : (
-               <Plus 
-                size={48} 
-                className="text-white transition-transform duration-300 group-active:rotate-90" 
-                strokeWidth={1.5}
-              />
-             )}
-          </button>
-        </div>
+            {/* Main Action Button */}
+            <div className="relative mb-8 group shrink-0">
+              <div className={`absolute inset-0 rounded-full bg-[var(--accent)] blur-2xl transition-all duration-1000 ${isListening && mode === 'identify' ? 'opacity-20 scale-150' : 'opacity-0 scale-100'}`}></div>
+              
+              <button 
+                onClick={handleMainAction}
+                disabled={isProcessing}
+                className={`
+                  w-40 h-40 rounded-full flex items-center justify-center z-10 relative
+                  bg-[var(--surface-dark)] 
+                  border-[1px] 
+                  transition-all duration-300 ease-in-out
+                  active:scale-95
+                  shadow-2xl
+                  ${(isListening && mode === 'identify') 
+                      ? 'scale-105 border-[var(--accent)]' 
+                      : 'border-[var(--ring-color)] hover:scale-105 hover:border-[var(--text-sec)]'
+                  }
+                  ${isProcessing ? 'opacity-50 cursor-wait' : ''}
+                `}
+              >
+                {mode === 'identify' ? (
+                  <Mic 
+                    size={48} 
+                    className={`transition-colors duration-300 ${isListening ? 'text-[var(--accent)]' : 'text-white'}`} 
+                    strokeWidth={1.5}
+                  />
+                ) : (
+                  <Plus 
+                    size={48} 
+                    className="text-white transition-transform duration-300 group-active:rotate-90" 
+                    strokeWidth={1.5}
+                  />
+                )}
+              </button>
+            </div>
 
-        {/* Visualizer */}
-        <WaveformVisualizer isListening={isListening} stream={mediaStream} visible={mode === 'identify'} />
+            {/* Visualizer */}
+            <WaveformVisualizer isListening={isListening} stream={mediaStream} visible={mode === 'identify'} />
 
-        {/* Mode Toggle */}
-        <ModeToggle mode={mode} setMode={handleModeChange} />
+            {/* Mode Toggle */}
+            <ModeToggle mode={mode} setMode={handleModeChange} />
+          </>
+        )}
 
       </div>
 

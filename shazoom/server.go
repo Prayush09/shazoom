@@ -137,8 +137,6 @@ func serve(protocol, port string, dbClient db.DBClient) {
         log.Println("Socket connected:", c.ID())
         return nil
     })
-
-    // --- WRAPPING HANDLERS TO PASS dbClient ---
     
     server.OnEvent("/", "totalSongs", func(s socketio.Conn) {
         handleTotalSongs(s, dbClient)

@@ -6,18 +6,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
-	"time"
-	"shazoom/db"
 	"shazoom/core"
+	"shazoom/db"
+	"shazoom/fileformat"
 	"shazoom/spotify"
 	"shazoom/utils"
-	"shazoom/fileformat"
+	"strings"
+	"time"
 
 	socketio "github.com/googollee/go-socket.io"
 )
-
-
 
 func emitStatus(socket socketio.Conn, statusType, message string) {
 	socket.Emit("downloadStatus", map[string]any{
@@ -26,11 +24,9 @@ func emitStatus(socket socketio.Conn, statusType, message string) {
 	})
 }
 
-
 func handleTotalSongs(socket socketio.Conn, dbClient db.DBClient) {
 	logger := utils.GetLogger()
 	ctx := context.Background()
-
 
 	totalSongs, err := dbClient.TotalSongs()
 	if err != nil {
@@ -194,5 +190,3 @@ func handleNewRecording(socket socketio.Conn, recordData string, dbClient db.DBC
 
 	socket.Emit("matches", matches)
 }
-
-

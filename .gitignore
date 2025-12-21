@@ -2,3 +2,4 @@
 ./shazoom/test/testdata
 node_modules
 ./shazoom/songs
+./shazoom/recordings

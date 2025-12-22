@@ -1,7 +1,7 @@
 
 import React, { useRef, useEffect } from 'react';
 
-export const WaveformVisualizer = ({ isListening, stream, visible }: { isListening: boolean, stream: MediaStream | null, visible: boolean }) => {
+export const WaveformVisualizer = ({ isListening, stream, visible, theme }: { isListening: boolean, stream: MediaStream | null, visible: boolean, theme: 'light' | 'dark' }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
 
@@ -18,7 +18,7 @@ export const WaveformVisualizer = ({ isListening, stream, visible }: { isListeni
     if (!isListening || !stream) {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       // Draw static dots/line
-      ctx.fillStyle = '#333';
+      ctx.fillStyle = theme === 'light' ? '#CBD5E1' : '#333333'; // Lighter dots for light theme
       const centerY = canvas.height / 2;
       const dotCount = 40;
       const spacing = canvas.width / dotCount;
@@ -56,9 +56,18 @@ export const WaveformVisualizer = ({ isListening, stream, visible }: { isListeni
       
       // Gradient
       const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
-      gradient.addColorStop(0, '#10b981'); // Green-500
-      gradient.addColorStop(0.5, '#34d399'); // Green-400
-      gradient.addColorStop(1, '#10b981');
+      
+      if (theme === 'light') {
+         // Purple/Indigo for Light Mode
+         gradient.addColorStop(0, '#6366F1'); // Indigo-500
+         gradient.addColorStop(0.5, '#818CF8'); // Indigo-400
+         gradient.addColorStop(1, '#6366F1');
+      } else {
+         // Green for Dark Mode
+         gradient.addColorStop(0, '#10b981'); // Emerald-500
+         gradient.addColorStop(0.5, '#34d399'); // Emerald-400
+         gradient.addColorStop(1, '#10b981');
+      }
 
       ctx.fillStyle = gradient;
 
@@ -92,7 +101,7 @@ export const WaveformVisualizer = ({ isListening, stream, visible }: { isListeni
       analyser.disconnect();
       if (audioCtx.state !== 'closed') audioCtx.close();
     };
-  }, [isListening, stream]);
+  }, [isListening, stream, theme]);
 
   return (
     <div className={`h-16 w-64 flex items-center justify-center mb-8 shrink-0 transition-opacity duration-300 ${visible ? 'opacity-100' : 'opacity-0'}`}>

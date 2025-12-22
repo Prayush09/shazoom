@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 export const GlobalStyles = () => (
@@ -9,7 +8,7 @@ export const GlobalStyles = () => (
       /* Default to Dark (Reference Design) */
       --bg-dark: #000000;
       --surface-dark: #121212;
-      --surface-highlight: #1E1E1E;
+      --surface-highlight-dark: #1E1E1E;
       --text-main-dark: #FFFFFF;
       --text-sec-dark: #A1A1AA;
       --accent-color: #1DB954; /* Spotify/Shazam Green */
@@ -20,6 +19,9 @@ export const GlobalStyles = () => (
       --surface-highlight-light: #E4E4E7;
       --text-main-light: #000000;
       --text-sec-light: #52525B;
+
+      /* Initial Global Variables (Dark Default) */
+      --surface-highlight: var(--surface-highlight-dark);
     }
 
     body {
@@ -32,11 +34,15 @@ export const GlobalStyles = () => (
       color: var(--text-main-dark);
       --bg: var(--bg-dark);
       --surface: var(--surface-dark);
-      --highlight: var(--surface-highlight);
+      --highlight: var(--surface-highlight-dark);
+      --surface-highlight: var(--surface-highlight-dark);
       --text: var(--text-main-dark);
       --text-sec: var(--text-sec-dark);
       --accent: var(--accent-color);
       --ring-color: #333333;
+      
+      /* New: Button Background for Dark Mode (Lighter than surface) */
+      --btn-bg: #1E1E1E; 
     }
 
     .theme-light {
@@ -45,10 +51,14 @@ export const GlobalStyles = () => (
       --bg: var(--bg-light);
       --surface: var(--surface-light);
       --highlight: var(--surface-highlight-light);
+      --surface-highlight: var(--surface-highlight-light);
       --text: var(--text-main-light);
       --text-sec: var(--text-sec-light);
       --accent: #6366F1;
       --ring-color: #E5E7EB;
+
+      /* New: Button Background for Light Mode (White) */
+      --btn-bg: #FFFFFF;
     }
 
     /* Scrollbar hiding */

@@ -332,3 +332,8 @@ ok      shazoom/test    11.876s
 
 - Implemented the youtube video player in the frontend
 - Fixed the socket io issues as go has EOF v3 and Present socket io is EOF v4, solved using v2.5 version which has moderate level vulnerabilities, not ideal but I it's a hobby project for my resume so it doesn't hurt.
+
+## 23rd Dec 2025
+
+- Adding a cascade like feature to the matches
+- Made a lot of UI changes in the frontend (3d gallery for matches, quantum circular loader in UI, dark/white mode).

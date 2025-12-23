@@ -3,3 +3,4 @@
 node_modules
 ./shazoom/songs
 ./shazoom/recordings
+./shazoom/youtube_cookies.txt

@@ -2,56 +2,57 @@ package spotify
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"shazoom/utils"
-	"errors"
-	"io"
-	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
-	"github.com/joho/godotenv"
+
 	"github.com/buger/jsonparser"
+	"github.com/joho/godotenv"
 	"google.golang.org/api/option"
 	"google.golang.org/api/youtube/v3"
 )
 
-
-
-
 func getYoutubeIdWithAPI(spTrack Track) (string, error) {
-	err := godotenv.Load();
-	if err != nil {
-		errors.New("could not load yt key env")
-	}
+	_ = godotenv.Load()
+
 	developerKey := os.Getenv("YT_KEY")
+	if developerKey == "" {
+		return "", errors.New("YT_KEY environment variable not set")
+	}
+
 	service, err := youtube.NewService(context.TODO(), option.WithAPIKey(developerKey))
 	if err != nil {
-		log.Fatalf("Error creating new YouTube client: %v", err)
+		log.Printf("Error creating new YouTube client: %v", err)
 		return "", err
 	}
 
-	// Video category ID 10 is for music videos
-	query := fmt.Sprintf("'%s' %s %s", spTrack.Title, spTrack.Artist, spTrack.Album) /* example: 'Lovesong' The Cure Disintegration */
-	call := service.Search.List([]string{"id", "snippet"}).Q(query).VideoCategoryId("10").Type("video")
+	query := fmt.Sprintf("'%s' %s %s", spTrack.Title, spTrack.Artist, spTrack.Album)
+	call := service.Search.List([]string{"id"}).
+		Q(query).
+		VideoCategoryId("10").
+		Type("video").
+		MaxResults(5)
 
-	response, err := call.Do()
+	resp, err := call.Do()
 	if err != nil {
-		log.Fatalf("Error making search API call: %v", err)
+		log.Printf("Error making search API call: %v", err)
 		return "", err
 	}
-	for _, item := range response.Items {
-		switch item.Id.Kind {
-		case "youtube#video":
+	for _, item := range resp.Items {
+		if item.Id.Kind == "youtube#video" && item.Id.VideoId != "" {
 			return item.Id.VideoId, nil
 		}
 	}
-	// TODO: Handle when the query returns no songs (highly unlikely since the query is coming from spotify though)
 	return "", nil
 }
 
@@ -79,15 +80,12 @@ func convertStringDurationToSeconds(durationStr string) int {
 		minutes, _ := strconv.Atoi(splitEntities[1])
 		hours, _ := strconv.Atoi(splitEntities[0])
 		return ((hours * 60) * 60) + (minutes * 60) + seconds
-	} else {
-		return 0
 	}
+	return 0
 }
 
-// GetYoutubeId takes the query as string and returns the search results video ID's
 func GetYoutubeId(track Track) (string, error) {
 	songDurationInSeconds := track.Duration
-	// searchQuery := fmt.Sprintf("'%s' %s %s", track.Title, track.Artist, track.Album)
 	searchQuery := fmt.Sprintf("'%s' %s", track.Title, track.Artist)
 
 	searchResults, err := ytSearch(searchQuery, 10)
@@ -95,16 +93,15 @@ func GetYoutubeId(track Track) (string, error) {
 		return "", err
 	}
 	if len(searchResults) == 0 {
-		errorMessage := fmt.Sprintf("no songs found for %s", searchQuery)
-		return "", errors.New(errorMessage)
+		return "", fmt.Errorf("no songs found for %s", searchQuery)
 	}
-	// Try for the closest match timestamp wise
+
 	for _, result := range searchResults {
 		allowedDurationRangeStart := songDurationInSeconds - durationMatchThreshold
 		allowedDurationRangeEnd := songDurationInSeconds + durationMatchThreshold
 		resultSongDuration := convertStringDurationToSeconds(result.Duration)
 		if resultSongDuration >= allowedDurationRangeStart && resultSongDuration <= allowedDurationRangeEnd {
-			fmt.Println("INFO: ", fmt.Sprintf("Found song with id '%s'", result.ID))
+			fmt.Printf("INFO: Found song with id '%s'\n", result.ID)
 			return result.ID, nil
 		}
 	}
@@ -119,25 +116,17 @@ func getContent(data []byte, index int) []byte {
 }
 
 func ytSearch(searchTerm string, limit int) (results []*SearchResult, err error) {
-	ytSearchUrl := fmt.Sprintf(
-		"https://www.youtube.com/results?search_query=%s", url.QueryEscape(searchTerm),
-	)
-
-	// fmt.Println("Search URL: ", ytSearchUrl)
-
+	ytSearchUrl := fmt.Sprintf("https://www.youtube.com/results?search_query=%s", url.QueryEscape(searchTerm))
 	req, err := http.NewRequest("GET", ytSearchUrl, nil)
 	if err != nil {
-		return nil, errors.New("cannot get youtube page")
+		return nil, errors.New("cannot create youtube request")
 	}
 	req.Header.Add("Accept-Language", "en")
 	res, err := httpClient.Do(req)
 	if err != nil {
 		return nil, errors.New("cannot get youtube page")
 	}
-
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(res.Body)
+	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
 		return nil, errors.New("failed to make a request to youtube")
@@ -162,11 +151,9 @@ func ytSearch(searchTerm string, limit int) (results []*SearchResult, err error)
 
 	index := 0
 	var contents []byte
-
 	for {
 		contents = getContent(jsonData, index)
 		_, _, _, err = jsonparser.Get(contents, "[0]", "carouselAdRenderer")
-
 		if err == nil {
 			index++
 		} else {
@@ -175,85 +162,95 @@ func ytSearch(searchTerm string, limit int) (results []*SearchResult, err error)
 	}
 
 	_, err = jsonparser.ArrayEach(contents, func(value []byte, t jsonparser.ValueType, i int, err error) {
-		if err != nil {
+		if err != nil || (limit > 0 && len(results) >= limit) {
 			return
 		}
 
-		if limit > 0 && len(results) >= limit {
-			return
-		}
-
-		id, err := jsonparser.GetString(value, "videoRenderer", "videoId")
-		if err != nil {
-			return
-		}
-
-		title, err := jsonparser.GetString(value, "videoRenderer", "title", "runs", "[0]", "text")
-		if err != nil {
-			return
-		}
-
-		uploader, err := jsonparser.GetString(value, "videoRenderer", "ownerText", "runs", "[0]", "text")
-		if err != nil {
-			return
-		}
-
-		live := false
+		id, _ := jsonparser.GetString(value, "videoRenderer", "videoId")
+		title, _ := jsonparser.GetString(value, "videoRenderer", "title", "runs", "[0]", "text")
+		uploader, _ := jsonparser.GetString(value, "videoRenderer", "ownerText", "runs", "[0]", "text")
 		duration, err := jsonparser.GetString(value, "videoRenderer", "lengthText", "simpleText")
 
-		if err != nil {
-			duration = ""
-			live = true
+		live := err != nil
+		if id != "" && title != "" {
+			results = append(results, &SearchResult{
+				Title:      title,
+				Uploader:   uploader,
+				Duration:   duration,
+				ID:         id,
+				URL:        fmt.Sprintf("https://youtube.com/watch?v=%s", id),
+				Live:       live,
+				SourceName: "youtube",
+			})
 		}
-
-		results = append(results, &SearchResult{
-			Title:      title,
-			Uploader:   uploader,
-			Duration:   duration,
-			ID:         id,
-			URL:        fmt.Sprintf("https://youtube.com/watch?v=%s", id),
-			Live:       live,
-			SourceName: "youtube",
-		})
 	})
 
-	if err != nil {
-		return results, err
-	}
-
-	return results, nil
+	return results, err
 }
 
-// downloadYTaudio downloads audio from a YouTube video using yt-dlp command line tool.
+// downloadYTaudio downloads audio from a YouTube video using yt-dlp.
 func downloadYTaudio(videoURL, outputFilePath string) (string, error) {
 	logger := utils.GetLogger()
 
 	dir := filepath.Dir(outputFilePath)
 	if stat, err := os.Stat(dir); err != nil || !stat.IsDir() {
 		logger.Error("Invalid directory for output file", slog.Any("error", err))
-		return "", errors.New("output directory does not exist or is not a directory")
+		return "", errors.New("output directory does not exist")
 	}
 
-	_, err := exec.LookPath("yt-dlp")
-	if err != nil {
+	if _, err := exec.LookPath("yt-dlp"); err != nil {
 		logger.Error("yt-dlp not found in PATH", slog.Any("error", err))
-		return "", errors.New("yt-dlp is not installed or not in PATH")
+		return "", errors.New("yt-dlp is not installed")
 	}
 
 	audioFmt := "wav"
-	cmd := exec.Command(
-		"yt-dlp",
-		"-f", "bestaudio",
+	args := []string{"-v"}
+	
+	cookiesPath := "/secrets/youtube_cookies.txt"
+	writableCookiesPath := "/tmp/youtube_cookies.txt"
+	
+	if _, err := os.Stat(cookiesPath); err == nil {
+		input, err := os.ReadFile(cookiesPath)
+		if err != nil {
+			logger.Warn("Could not read cookies file", slog.Any("error", err))
+		} else {
+			if err := os.WriteFile(writableCookiesPath, input, 0600); err != nil {
+				logger.Warn("Could not write cookies to temp", slog.Any("error", err))
+			} else {
+				args = append(args, "--cookies", writableCookiesPath)
+				logger.Info("Using YouTube cookies for authentication")
+			}
+		}
+	} else {
+		logger.Warn("Cookies file not found, proceeding without authentication",
+			slog.String("path", cookiesPath))
+	}
+	
+	args = append(args,
+		"--js-runtime", "node",
 		"--extract-audio",
 		"--audio-format", audioFmt,
+		"-f", "bestaudio",
 		"-o", outputFilePath,
 		videoURL,
 	)
+	
+	cmd := exec.Command("yt-dlp", args...)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logger.Error("yt-dlp command failed", slog.String("output", string(output)), slog.Any("error", err))
+		if strings.Contains(string(output), "LOGIN_REQUIRED") ||
+		   strings.Contains(string(output), "Sign in to confirm you're not a bot") {
+			logger.Warn("Skipping login-protected YouTube video",
+				slog.String("output", string(output)))
+			return "", nil
+		}
+		logger.Error("yt-dlp command failed",
+			slog.String("output", string(output)),
+			slog.Any("error", err))
 		return "", err
 	}
+
 	return outputFilePath + "." + audioFmt, nil
 }
+

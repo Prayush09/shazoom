@@ -337,3 +337,9 @@ ok      shazoom/test    11.876s
 
 - Adding a cascade like feature to the matches
 - Made a lot of UI changes in the frontend (3d gallery for matches, quantum circular loader in UI, dark/white mode).
+- Implementing cookie based authentication to access yt protected videos in container
+- Trying to get the spotify -> ytdlp -> DB pipeline to work is taking years away from my life.
+- Finally done with the backend to cloudRun (serverless)
+- Now will deploy the front end and done!
+
+- To deploy the front end I have 

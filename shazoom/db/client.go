@@ -48,19 +48,19 @@ func setupTestEnv() {
 }
 
 func NewDBClient() (DBClient, error) {
-	setupTestEnv()
-	var (
-		dbUser = utils.GetEnv("DB_USER")
-		dbPass = utils.GetEnv("DB_PASS")
-		dbHost = utils.GetEnv("DB_HOST")
-		dbPort = utils.GetEnv("DB_PORT")
-		dbName = utils.GetEnv("DB_NAME")
-	)
+    setupTestEnv()
+    var (
+        dbUser = utils.GetEnv("DB_USER")
+        dbPass = utils.GetEnv("DB_PASS")
+        dbHost = utils.GetEnv("DB_HOST") 
+        dbPort = utils.GetEnv("DB_PORT")
+        dbName = utils.GetEnv("DB_NAME")
+    )
 
-	fmt.Printf("DEBUG: Connecting to %s as user %s\n", dbHost, dbUser)
+    fmt.Printf("DEBUG: Connecting to %s as user %s\n", dbHost, dbUser)
 
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=require",
-		dbUser, dbPass, dbHost, dbPort, dbName)
+    dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
+        dbHost, dbUser, dbPass, dbName, dbPort)
 
-	return NewPostgresClient(dsn)
+    return NewPostgresClient(dsn)
 }

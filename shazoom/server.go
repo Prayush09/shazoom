@@ -30,7 +30,7 @@ import (
 	"github.com/mdobak/go-xerrors"
 )
 
-const SONGS_DIR = "songs"
+const SONGS_DIR = "/tmp/songs"
 
 var yellow = color.New(color.FgYellow)
 
@@ -175,6 +175,26 @@ func serveHTTP(socketServer *socketio.Server, serveHTTPS bool, port string) {
 	mux.Handle("/socket.io/", socketServer)
 	mux.Handle("/", http.FileServer(http.Dir("static")))
 
+	corsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        origin := r.Header.Get("Origin")
+        if origin == "" {
+            origin = "https://shazoom.prayushgiri.com"
+        }
+
+        w.Header().Set("Access-Control-Allow-Origin", origin)
+        w.Header().Set("Access-Control-Allow-Credentials", "true")
+        w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+        w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
+
+        // Cloud Run/Browsers send OPTIONS requests before POSTs
+        if r.Method == "OPTIONS" {
+            w.WriteHeader(http.StatusNoContent)
+            return
+        }
+
+        mux.ServeHTTP(w, r)
+    })
+
 	if serveHTTPS {
 		certKey := utils.GetEnv("CERT_KEY",
 			"/etc/letsencrypt/live/localport.online/privkey.pem",
@@ -188,12 +208,10 @@ func serveHTTP(socketServer *socketio.Server, serveHTTPS bool, port string) {
 		}
 
 		httpsServer := &http.Server{
-			Addr:    ":" + port,
-			Handler: mux,
-			TLSConfig: &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			},
-		}
+            Addr:    ":" + port,
+            Handler: corsHandler,
+            TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+        }
 
 		go func() {
 			redirectPort := utils.GetEnv("REDIRECT_PORT", "80")
@@ -213,7 +231,7 @@ func serveHTTP(socketServer *socketio.Server, serveHTTPS bool, port string) {
 	}
 
 	log.Printf("HTTP listening on :%s\n", port)
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+	log.Fatal(http.ListenAndServe(":"+port, corsHandler))
 }
 
 

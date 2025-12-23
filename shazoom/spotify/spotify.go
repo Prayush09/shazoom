@@ -328,7 +328,7 @@ func AlbumInfo(url string) ([]Track, error) {
 			Artist:   artists[0],
 			Artists:  artists,
 			Duration: item.Duration / 1000,
-			Album:    "", // You can fetch full album info if needed
+			Album:    "", 
 		}).buildTrack())
 	}
 

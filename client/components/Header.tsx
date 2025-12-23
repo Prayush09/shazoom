@@ -1,5 +1,5 @@
-import React from 'react';
-import { Moon, Music2, Database } from 'lucide-react';
+
+import { Moon, Database } from 'lucide-react';
 
 export const Header = ({ 
   toggleTheme, 

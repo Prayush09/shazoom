@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"shazoom/core"
@@ -14,24 +12,24 @@ import (
 	"strings"
 	"sync"
 	"time"
-
+	"os/exec"
+	"os"
 	"github.com/mdobak/go-xerrors"
 )
 
 const DELETE_SONG_FILE = false
 
-// Added dbClient to signature
 func DlSingleTrack(url, savePath string, dbClient db.DBClient) (int, error) {
 	logger := utils.GetLogger()
 	logger.Info("Getting track info", slog.String("url", url))
+
 	trackInfo, err := TrackInfo(url)
 	if err != nil {
 		return 0, err
 	}
 
-	track := []Track{*trackInfo}
 	logger.Info("Now downloading track")
-	return dlTrack(track, savePath, dbClient)
+	return dlTrack([]Track{*trackInfo}, savePath, dbClient)
 }
 
 func DlPlaylist(url, savePath string, dbClient db.DBClient) (int, error) {
@@ -41,7 +39,7 @@ func DlPlaylist(url, savePath string, dbClient db.DBClient) (int, error) {
 		return 0, err
 	}
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(time.Second)
 	logger.Info("Now downloading playlist")
 	return dlTrack(tracks, savePath, dbClient)
 }
@@ -53,15 +51,14 @@ func DlAlbum(url, savePath string, dbClient db.DBClient) (int, error) {
 		return 0, err
 	}
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(time.Second)
 	logger.Info("Now downloading album")
 	return dlTrack(tracks, savePath, dbClient)
 }
 
 func dlTrack(tracks []Track, path string, dbClient db.DBClient) (int, error) {
-	var wg sync.WaitGroup
-	var totalTracks int
 	logger := utils.GetLogger()
+	var wg sync.WaitGroup
 	results := make(chan int, len(tracks))
 	numCPUs := runtime.NumCPU()
 	semaphore := make(chan struct{}, numCPUs)
@@ -82,47 +79,58 @@ func dlTrack(tracks []Track, path string, dbClient db.DBClient) (int, error) {
 				Title:    track.Title,
 			}
 
-			// check if song exists using shared client
-			keyExists, err := SongKeyExists(utils.GenerateSongKey(trackCopy.Title, trackCopy.Artist), dbClient)
+			keyExists, err := SongKeyExists(
+				utils.GenerateSongKey(trackCopy.Title, trackCopy.Artist),
+				dbClient,
+			)
 			if err != nil {
-				logger.ErrorContext(ctx, "error checking song existence", slog.Any("error", xerrors.New(err)))
+				logger.ErrorContext(ctx, "error checking song existence",
+					slog.Any("error", xerrors.New(err)))
+				return
 			}
 			if keyExists {
-				logger.Info(fmt.Sprintf("'%s' by '%s' already exists.", trackCopy.Title, trackCopy.Artist))
+				logger.Info(fmt.Sprintf("'%s' by '%s' already exists.",
+					trackCopy.Title, trackCopy.Artist))
 				return
 			}
 
 			ytID, err := getYTID(trackCopy, dbClient)
-			if ytID == "" || err != nil {
-				logger.ErrorContext(ctx, "Download failed", slog.Any("error", xerrors.New(err)))
+			if err != nil || ytID == "" {
+				logger.ErrorContext(ctx, "Download failed",
+					slog.Any("error", xerrors.New(err)))
 				return
 			}
 
-			trackCopy.Title, trackCopy.Artist = correctFilename(trackCopy.Title, trackCopy.Artist)
+			ytURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", ytID)
+
+			trackCopy.Title, trackCopy.Artist =
+				correctFilename(trackCopy.Title, trackCopy.Artist)
 			fileName := fmt.Sprintf("%s - %s", trackCopy.Title, trackCopy.Artist)
 			filePath := filepath.Join(path, fileName)
 
-			downloadedPath, err := downloadYTaudio(ytID, filePath)
+			downloadedPath, err := downloadYTaudio(ytURL, filePath)
 			if err != nil {
-				logger.ErrorContext(ctx, "yt-dlp failed", slog.Any("error", xerrors.New(err)))
+				logger.ErrorContext(ctx, "yt-dlp failed",
+					slog.Any("error", xerrors.New(err)))
 				return
 			}
 
-			// Pass client to processing
-			err = ProcessAndSaveSong(downloadedPath, trackCopy.Title, trackCopy.Artist, ytID, dbClient)
-			if err != nil {
-				logger.ErrorContext(ctx, "DB save failed", slog.Any("error", xerrors.New(err)))
+			if err := ProcessAndSaveSong(
+				downloadedPath, trackCopy.Title, trackCopy.Artist, ytID, dbClient,
+			); err != nil {
+				logger.ErrorContext(ctx, "DB save failed",
+					slog.Any("error", xerrors.New(err)))
 				return
 			}
 
 			wavFilePath := filepath.Join(path, fileName+".wav")
 			_ = addTags(wavFilePath, *trackCopy)
-
 			if DELETE_SONG_FILE {
 				utils.DeleteFile(wavFilePath)
 			}
 
-			logger.Info(fmt.Sprintf("'%s' by '%s' was downloaded", track.Title, track.Artist))
+			logger.Info(fmt.Sprintf("'%s' by '%s' was downloaded",
+				track.Title, track.Artist))
 			results <- 1
 		}(t)
 	}
@@ -132,11 +140,13 @@ func dlTrack(tracks []Track, path string, dbClient db.DBClient) (int, error) {
 		close(results)
 	}()
 
+	totalTracks := 0
 	for range results {
 		totalTracks++
 	}
 	return totalTracks, nil
 }
+
 
 func addTags(file string, track Track) error {
 	logger := utils.GetLogger()
@@ -201,20 +211,31 @@ func ProcessAndSaveSong(songFilePath, songTitle, songArtist, ytID string, dbClie
 }
 
 func getYTID(trackCopy *Track, dbClient db.DBClient) (string, error) {
-	ytID, err := GetYoutubeId(*trackCopy)
-	if ytID == "" || err != nil {
-		return "", err
-	}
+    var ytID string
+    var err error
+ 
+    ytID, err = getYoutubeIdWithAPI(*trackCopy)
+    
+    if err != nil || ytID == "" {
+        fmt.Printf("DEBUG: API search failed or no results, falling back to scraper for: %s\n", trackCopy.Title)
+        ytID, err = GetYoutubeId(*trackCopy)
+    }
 
-	// Check if YouTube ID exists using shared client
-	ytidExists, err := YtIDExists(ytID, dbClient)
-	if err != nil {
-		return "", err
-	}
+    if err != nil {
+        return "", fmt.Errorf("all search methods failed: %v", err)
+    }
+    if ytID == "" {
+        return "", fmt.Errorf("could not find a YouTube ID for: %s", trackCopy.Title)
+    }
 
-	if ytidExists {
-		return "", fmt.Errorf("youTube ID (%s) already exists in DB", ytID)
-	}
+    ytidExists, err := YtIDExists(ytID, dbClient)
+    if err != nil {
+        return "", fmt.Errorf("error checking DB for ytID: %v", err)
+    }
 
-	return ytID, nil
+    if ytidExists {
+        return "", fmt.Errorf("youTube ID (%s) already exists in DB", ytID)
+    }
+
+    return ytID, nil
 }

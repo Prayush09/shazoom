@@ -1,5 +1,5 @@
 
-import React, { useRef, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 
 export const WaveformVisualizer = ({ isListening, stream, visible, theme }: { isListening: boolean, stream: MediaStream | null, visible: boolean, theme: 'light' | 'dark' }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);

@@ -1,6 +1,3 @@
-
-import React from 'react';
-
 export const ModeToggle = ({ mode, setMode, theme }: { mode: 'identify' | 'add', setMode: (m: 'identify' | 'add') => void, theme: 'light' | 'dark' }) => {
   return (
     <div className={`flex p-1 rounded-full relative mb-12 shrink-0 transition-colors duration-300 ${theme === 'dark' ? 'bg-white/10' : 'bg-black/5'}`}>

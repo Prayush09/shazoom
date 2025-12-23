@@ -1,3 +1,4 @@
+
 import { useState, useRef, useEffect } from 'react';
 import { floatTo16BitPCM, arrayBufferToBase64 } from '../utils/audioHelpers';
 
@@ -13,6 +14,9 @@ export const useAudioRecorder = ({ onRecordingComplete, onError }: UseAudioRecor
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  const startTimeRef = useRef<number>(0);
+  const isCancelledRef = useRef<boolean>(false);
 
   useEffect(() => {
     return () => {
@@ -34,6 +38,7 @@ export const useAudioRecorder = ({ onRecordingComplete, onError }: UseAudioRecor
   };
 
   const cancelRecording = () => {
+    isCancelledRef.current = true;
     chunksRef.current = [];
     stopListening();
     if (mediaStream) {
@@ -56,6 +61,10 @@ export const useAudioRecorder = ({ onRecordingComplete, onError }: UseAudioRecor
       setMediaStream(stream);
       setIsListening(true);
       chunksRef.current = [];
+      
+      // Reset state for new recording
+      isCancelledRef.current = false;
+      startTimeRef.current = Date.now();
 
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
@@ -67,6 +76,21 @@ export const useAudioRecorder = ({ onRecordingComplete, onError }: UseAudioRecor
       };
 
       mediaRecorder.onstop = async () => {
+        if (isCancelledRef.current) {
+            if (stream) stream.getTracks().forEach(t => t.stop());
+            setMediaStream(null);
+            return;
+        }
+
+        
+        const duration = Date.now() - startTimeRef.current;
+        if (duration < 8000) {
+             if (stream) stream.getTracks().forEach(t => t.stop());
+             setMediaStream(null);
+             onError("Please record for at least 10 seconds");
+             return;
+        }
+
         if (chunksRef.current.length === 0) {
             if (stream) stream.getTracks().forEach(t => t.stop());
             setMediaStream(null);
@@ -85,7 +109,7 @@ export const useAudioRecorder = ({ onRecordingComplete, onError }: UseAudioRecor
 
       timerRef.current = setTimeout(() => {
         stopListening();
-      }, 8000);
+      }, 11000);
 
     } catch (e) {
       console.error(e);
@@ -97,7 +121,6 @@ export const useAudioRecorder = ({ onRecordingComplete, onError }: UseAudioRecor
   const processRecording = async (blob: Blob) => {
     try {
       const arrayBuffer = await blob.arrayBuffer();
-      // Enforce 44.1kHz sample rate for backend compatibility
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({
         sampleRate: 44100,
       });
@@ -114,7 +137,7 @@ export const useAudioRecorder = ({ onRecordingComplete, onError }: UseAudioRecor
           audio: base64Audio,
           sampleRate: sampleRate,
           channels: 1,
-          sampleSize: 16, // Explicitly add sampleSize as required by backend
+          sampleSize: 16, 
           duration: decodedBuffer.duration
       });
 
